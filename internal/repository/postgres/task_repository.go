@@ -23,7 +23,7 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 	const query = `
 		INSERT INTO tasks (title, description, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, title, description, status, created_at, updated_at
+		RETURNING id, title, description, status, parent_task_id, scheduled_date, created_at, updated_at
 	`
 
 	row := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.CreatedAt, task.UpdatedAt)
