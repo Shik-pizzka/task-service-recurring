@@ -9,22 +9,31 @@ import (
 	httphandlers "example.com/taskservice/internal/transport/http/handlers"
 )
 
-func NewRouter(taskHandler *handlers.TaskHandler, recurrenceHandler *handlers.RecurrenceHandler, docsHandler *swaggerdocs.Handler) *mux.Router {
-    r := mux.NewRouter()
-    api := r.PathPrefix("/api/v1").Subrouter()
+func NewRouter(
+	taskHandler *httphandlers.TaskHandler,
+	recurrenceHandler *httphandlers.RecurrenceHandler,
+	docsHandler *swaggerdocs.Handler,
+) *mux.Router {
+	router := mux.NewRouter().StrictSlash(true)
 
-    api.HandleFunc("/tasks",        taskHandler.Create).Methods(http.MethodPost)
-    api.HandleFunc("/tasks",        taskHandler.List).Methods(http.MethodGet)
-    api.HandleFunc("/tasks/{id}",   taskHandler.GetByID).Methods(http.MethodGet)
-    api.HandleFunc("/tasks/{id}",   taskHandler.Update).Methods(http.MethodPut)
-    api.HandleFunc("/tasks/{id}",   taskHandler.Delete).Methods(http.MethodDelete)
+	// swagger
+	router.HandleFunc("/swagger/openapi.json", docsHandler.ServeSpec).Methods(http.MethodGet)
+	router.HandleFunc("/swagger/", docsHandler.ServeUI).Methods(http.MethodGet)
+	router.HandleFunc("/swagger", docsHandler.RedirectToUI).Methods(http.MethodGet)
 
-    // Recurrence
-    api.HandleFunc("/tasks/{id}/recurrence",          recurrenceHandler.SetRule).Methods(http.MethodPut)
-    api.HandleFunc("/tasks/{id}/recurrence",          recurrenceHandler.GetRule).Methods(http.MethodGet)
-    api.HandleFunc("/tasks/{id}/recurrence",          recurrenceHandler.DeleteRule).Methods(http.MethodDelete)
-    api.HandleFunc("/tasks/{id}/recurrence/generate", recurrenceHandler.Generate).Methods(http.MethodPost)
+	// api
+	api := router.PathPrefix("/api/v1").Subrouter()
 
-    r.PathPrefix("/swagger/").Handler(docsHandler)
-    return r
+	api.HandleFunc("/tasks", taskHandler.Create).Methods(http.MethodPost)
+	api.HandleFunc("/tasks", taskHandler.List).Methods(http.MethodGet)
+	api.HandleFunc("/tasks/{id:[0-9]+}", taskHandler.GetByID).Methods(http.MethodGet)
+	api.HandleFunc("/tasks/{id:[0-9]+}", taskHandler.Update).Methods(http.MethodPut)
+	api.HandleFunc("/tasks/{id:[0-9]+}", taskHandler.Delete).Methods(http.MethodDelete)
+
+	api.HandleFunc("/tasks/{id:[0-9]+}/recurrence", recurrenceHandler.SetRule).Methods(http.MethodPut)
+	api.HandleFunc("/tasks/{id:[0-9]+}/recurrence", recurrenceHandler.GetRule).Methods(http.MethodGet)
+	api.HandleFunc("/tasks/{id:[0-9]+}/recurrence", recurrenceHandler.DeleteRule).Methods(http.MethodDelete)
+	api.HandleFunc("/tasks/{id:[0-9]+}/recurrence/generate", recurrenceHandler.Generate).Methods(http.MethodPost)
+
+	return router
 }

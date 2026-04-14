@@ -15,8 +15,8 @@ import (
 	transporthttp "example.com/taskservice/internal/transport/http"
 	swaggerdocs "example.com/taskservice/internal/transport/http/docs"
 	httphandlers "example.com/taskservice/internal/transport/http/handlers"
-	"example.com/taskservice/internal/usecase/task"
 	recurrenceusecase "example.com/taskservice/internal/usecase/recurrence"
+	taskusecase "example.com/taskservice/internal/usecase/task"
 )
 
 func main() {
@@ -40,13 +40,14 @@ func main() {
 	ruleRepo       := postgresrepo.NewRuleRepository(pool)
 	occurrenceRepo := postgresrepo.NewOccurrenceRepository(pool)
 
-	taskUsecase       := task.NewService(taskRepo)
-	recurrenceUsecase := recurrence.NewService(ruleRepo, occurrenceRepo, taskRepo)
+	taskSvc       := taskusecase.NewService(taskRepo)
+	recurrenceSvc := recurrenceusecase.NewService(ruleRepo, occurrenceRepo, taskRepo)
 
-	taskHandler       := httphandlers.NewTaskHandler(taskUsecase)
-	recurrenceHandler := httphandlers.NewRecurrenceHandler(recurrenceUsecase)
+	taskHandler       := httphandlers.NewTaskHandler(taskSvc)
+	recurrenceHandler := httphandlers.NewRecurrenceHandler(recurrenceSvc)
 	docsHandler       := swaggerdocs.NewHandler()
-	router            := transporthttp.NewRouter(taskHandler, recurrenceHandler, docsHandler)
+
+	router := transporthttp.NewRouter(taskHandler, recurrenceHandler, docsHandler)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -56,10 +57,8 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Error("shutdown http server", "error", err)
 		}
@@ -83,11 +82,9 @@ func loadConfig() config {
 		HTTPAddr:    envOrDefault("HTTP_ADDR", ":8080"),
 		DatabaseDSN: envOrDefault("DATABASE_DSN", "postgres://postgres:postgres@localhost:5432/taskservice?sslmode=disable"),
 	}
-
 	if cfg.DatabaseDSN == "" {
 		panic(fmt.Errorf("DATABASE_DSN is required"))
 	}
-
 	return cfg
 }
 
@@ -95,6 +92,5 @@ func envOrDefault(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
-
 	return fallback
 }
