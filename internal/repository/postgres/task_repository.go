@@ -36,7 +36,7 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at
+		SELECT id, title, description, status, parent_task_id, scheduled_date, created_at, updated_at
 		FROM tasks
 		WHERE id = $1
 	`
@@ -95,7 +95,7 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at
+		SELECT id, title, description, status, parent_task_id, scheduled_date, created_at, updated_at
 		FROM tasks
 		ORDER BY id DESC
 	`
@@ -128,23 +128,21 @@ type taskScanner interface {
 }
 
 func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
-	var (
-		task   taskdomain.Task
-		status string
-	)
-
-	if err := scanner.Scan(
-		&task.ID,
-		&task.Title,
-		&task.Description,
-		&status,
-		&task.CreatedAt,
-		&task.UpdatedAt,
-	); err != nil {
-		return nil, err
-	}
-
-	task.Status = taskdomain.Status(status)
-
-	return &task, nil
+    var (
+        task          taskdomain.Task
+        status        string
+        parentTaskID  *int64
+        scheduledDate *time.Time
+    )
+    if err := scanner.Scan(
+        &task.ID, &task.Title, &task.Description, &status,
+        &parentTaskID, &scheduledDate,
+        &task.CreatedAt, &task.UpdatedAt,
+    ); err != nil {
+        return nil, err
+    }
+    task.Status = taskdomain.Status(status)
+    task.ParentTaskID = parentTaskID
+    task.ScheduledDate = scheduledDate
+    return &task, nil
 }

@@ -16,6 +16,7 @@ import (
 	swaggerdocs "example.com/taskservice/internal/transport/http/docs"
 	httphandlers "example.com/taskservice/internal/transport/http/handlers"
 	"example.com/taskservice/internal/usecase/task"
+	recurrenceusecase "example.com/taskservice/internal/usecase/recurrence"
 )
 
 func main() {
@@ -35,11 +36,17 @@ func main() {
 	}
 	defer pool.Close()
 
-	taskRepo := postgresrepo.New(pool)
-	taskUsecase := task.NewService(taskRepo)
-	taskHandler := httphandlers.NewTaskHandler(taskUsecase)
-	docsHandler := swaggerdocs.NewHandler()
-	router := transporthttp.NewRouter(taskHandler, docsHandler)
+	taskRepo       := postgresrepo.New(pool)
+	ruleRepo       := postgresrepo.NewRuleRepository(pool)
+	occurrenceRepo := postgresrepo.NewOccurrenceRepository(pool)
+
+	taskUsecase       := task.NewService(taskRepo)
+	recurrenceUsecase := recurrence.NewService(ruleRepo, occurrenceRepo, taskRepo)
+
+	taskHandler       := httphandlers.NewTaskHandler(taskUsecase)
+	recurrenceHandler := httphandlers.NewRecurrenceHandler(recurrenceUsecase)
+	docsHandler       := swaggerdocs.NewHandler()
+	router            := transporthttp.NewRouter(taskHandler, recurrenceHandler, docsHandler)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
