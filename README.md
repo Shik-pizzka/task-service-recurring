@@ -38,6 +38,17 @@ http://localhost:8080/swagger/
 | `PUT` | `/tasks/{id}` | Обновить задачу |
 | `DELETE` | `/tasks/{id}` | Удалить задачу |
 
+#### Фильтрация списка задач
+
+`GET /tasks` поддерживает необязательные query-параметры:
+
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `only_templates` | `true` | Только шаблонные задачи (без родителя) |
+| `parent_id` | `integer` | Только дочерние задачи указанного шаблона |
+
+Параметры `only_templates` и `parent_id` взаимоисключающие.
+
 ### Периодичность (новый функционал)
 
 | Метод | Путь | Описание |
@@ -74,7 +85,7 @@ http://localhost:8080/swagger/
 | `daily` | `interval_days` (минимум 1) | каждые 2 дня |
 | `monthly` | `month_day` (от 1 до 30) | 15-го числа каждого месяца |
 | `specific_dates` | `specific_dates` — массив дат | только указанные даты |
-| `even_odd` | `day_parity`: even или odd | только чётные дни месяца |
+| `even_odd` | `day_parity`: `even` или `odd` | только чётные дни месяца |
 
 ### Модель данных
 
@@ -103,82 +114,97 @@ http://localhost:8080/swagger/
 
 ---
 
-## Примеры запросов
+## Тестирование
 
-### Создать задачу-шаблон
+### Unit-тесты (запускаются без Docker)
 
 ```bash
+go test ./internal/domain/... ./internal/usecase/... -v
+```
+
+Покрытие: 31 тест — валидация правил, генерация дат для всех типов периодичности, граничные случаи (февраль, overflow), фильтрация списка задач.
+
+### Ручное тестирование через curl
+
+Запусти проект:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+#### Базовый сценарий — ежедневная задача
+
+```bash
+# 1. Создать шаблон
 curl -X POST http://localhost:8080/api/v1/tasks \
   -H "Content-Type: application/json" \
-  -d '{"title":"Обход пациентов","description":"Ежедневный обход"}'
-```
+  -d "{\"title\":\"Обход пациентов\",\"description\":\"Ежедневный обход\"}"
 
-### Установить правило — каждые 2 дня
-
-```bash
+# 2. Установить правило — каждые 2 дня
 curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
   -H "Content-Type: application/json" \
-  -d '{"rule_type":"daily","interval_days":2,"start_date":"2026-04-14"}'
-```
+  -d "{\"rule_type\":\"daily\",\"interval_days\":2,\"start_date\":\"2026-04-14\"}"
 
-### Установить правило — 15-го числа каждого месяца
+# 3. Сгенерировать задачи на 30 дней вперёд
+curl -X POST http://localhost:8080/api/v1/tasks/1/recurrence/generate
 
-```bash
-curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
-  -H "Content-Type: application/json" \
-  -d '{"rule_type":"monthly","month_day":15,"start_date":"2026-04-01","end_date":"2026-12-31"}'
-```
+# 4. Посмотреть все задачи
+curl http://localhost:8080/api/v1/tasks
 
-### Установить правило — конкретные даты
+# 5. Только шаблоны
+curl "http://localhost:8080/api/v1/tasks?only_templates=true"
 
-```bash
-curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
-  -H "Content-Type: application/json" \
-  -d '{"rule_type":"specific_dates","specific_dates":["2026-05-01","2026-05-10","2026-05-25"],"start_date":"2026-05-01"}'
-```
+# 6. Только дочерние задачи шаблона 1
+curl "http://localhost:8080/api/v1/tasks?parent_id=1"
 
-### Установить правило — чётные дни месяца
-
-```bash
-curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
-  -H "Content-Type: application/json" \
-  -d '{"rule_type":"even_odd","day_parity":"even","start_date":"2026-04-14"}'
-```
-
-### Сгенерировать задачи на 30 дней вперёд
-
-```bash
+# 7. Повторная генерация — должен вернуть [] (идемпотентность)
 curl -X POST http://localhost:8080/api/v1/tasks/1/recurrence/generate
 ```
 
-### Посмотреть правило
+#### Другие типы периодичности
 
 ```bash
-curl http://localhost:8080/api/v1/tasks/1/recurrence
+# 15-го числа каждого месяца
+curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
+  -H "Content-Type: application/json" \
+  -d "{\"rule_type\":\"monthly\",\"month_day\":15,\"start_date\":\"2026-04-01\",\"end_date\":\"2026-12-31\"}"
+
+# Конкретные даты
+curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
+  -H "Content-Type: application/json" \
+  -d "{\"rule_type\":\"specific_dates\",\"specific_dates\":[\"2026-05-01\",\"2026-05-10\",\"2026-05-25\"],\"start_date\":\"2026-05-01\"}"
+
+# Только чётные дни
+curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
+  -H "Content-Type: application/json" \
+  -d "{\"rule_type\":\"even_odd\",\"day_parity\":\"even\",\"start_date\":\"2026-04-14\"}"
 ```
 
-### Удалить правило
+#### Проверка граничных случаев
 
 ```bash
+# Ошибка — month_day=31 не поддерживается
+curl -X PUT http://localhost:8080/api/v1/tasks/1/recurrence \
+  -H "Content-Type: application/json" \
+  -d "{\"rule_type\":\"monthly\",\"month_day\":31,\"start_date\":\"2026-01-01\"}"
+
+# Ошибка — несуществующая задача
+curl -X PUT http://localhost:8080/api/v1/tasks/9999/recurrence \
+  -H "Content-Type: application/json" \
+  -d "{\"rule_type\":\"daily\",\"interval_days\":1,\"start_date\":\"2026-04-14\"}"
+
+# Ошибка — оба фильтра одновременно
+curl "http://localhost:8080/api/v1/tasks?only_templates=true&parent_id=1"
+
+# Удаление правила — дочерние задачи остаются
 curl -X DELETE http://localhost:8080/api/v1/tasks/1/recurrence
+curl http://localhost:8080/api/v1/tasks
 ```
 
-### Пример ответа при генерации
+### Swagger UI
 
-```json
-[
-  {
-    "id": 2,
-    "title": "Обход пациентов",
-    "description": "Ежедневный обход",
-    "status": "new",
-    "parent_task_id": 1,
-    "scheduled_date": "2026-04-14T00:00:00Z",
-    "created_at": "2026-04-14T10:00:00Z",
-    "updated_at": "2026-04-14T10:00:00Z"
-  }
-]
-```
+Открой в браузере `http://localhost:8080/swagger/` — там можно тестировать все эндпоинты графически без терминала.
 
 ---
 
