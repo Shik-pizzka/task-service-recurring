@@ -6,8 +6,6 @@ import (
     "net/http"
     "time"
 
-    "github.com/gorilla/mux"
-
     recurrencedomain "example.com/taskservice/internal/domain/recurrence"
     taskdomain "example.com/taskservice/internal/domain/task"
     recurrenceusecase "example.com/taskservice/internal/usecase/recurrence"
