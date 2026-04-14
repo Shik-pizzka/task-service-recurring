@@ -3,12 +3,14 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	taskdomain "example.com/taskservice/internal/domain/task"
+	taskusecase "example.com/taskservice/internal/usecase/task"
 )
 
 type Repository struct {
@@ -80,13 +82,33 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
-	const query = `
+// List returns tasks filtered by the given filter.
+func (r *Repository) List(ctx context.Context, filter taskusecase.ListFilter) ([]taskdomain.Task, error) {
+	query := `
 		SELECT id, title, description, status, parent_task_id, scheduled_date, created_at, updated_at
 		FROM tasks
-		ORDER BY id DESC
 	`
-	rows, err := r.pool.Query(ctx, query)
+	var (
+		conditions []string
+		args       []any
+		argIdx     = 1
+	)
+
+	if filter.OnlyTemplates {
+		conditions = append(conditions, "parent_task_id IS NULL")
+	}
+	if filter.ParentID != nil {
+		conditions = append(conditions, fmt.Sprintf("parent_task_id = $%d", argIdx))
+		args = append(args, *filter.ParentID)
+		argIdx++
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + joinConditions(conditions)
+	}
+	query += " ORDER BY id DESC"
+
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +123,14 @@ func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 		tasks = append(tasks, *task)
 	}
 	return tasks, rows.Err()
+}
+
+func joinConditions(conditions []string) string {
+	result := conditions[0]
+	for _, c := range conditions[1:] {
+		result += " AND " + c
+	}
+	return result
 }
 
 type taskScanner interface {

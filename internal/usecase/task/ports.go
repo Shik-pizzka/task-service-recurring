@@ -11,7 +11,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id int64) (*taskdomain.Task, error)
 	Update(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error)
 	Delete(ctx context.Context, id int64) error
-	List(ctx context.Context) ([]taskdomain.Task, error)
+	List(ctx context.Context, filter ListFilter) ([]taskdomain.Task, error)
 }
 
 type Usecase interface {
@@ -19,7 +19,16 @@ type Usecase interface {
 	GetByID(ctx context.Context, id int64) (*taskdomain.Task, error)
 	Update(ctx context.Context, id int64, input UpdateInput) (*taskdomain.Task, error)
 	Delete(ctx context.Context, id int64) error
-	List(ctx context.Context) ([]taskdomain.Task, error)
+	List(ctx context.Context, filter ListFilter) ([]taskdomain.Task, error)
+}
+
+// ListFilter controls which tasks are returned by List.
+// All fields are optional — zero value means "no filter".
+type ListFilter struct {
+	// OnlyTemplates — if true, return only parent tasks (parent_task_id IS NULL).
+	OnlyTemplates bool
+	// ParentID — if non-nil, return only children of that parent task.
+	ParentID *int64
 }
 
 type CreateInput struct {

@@ -97,8 +97,21 @@ func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// List godoc
+// GET /api/v1/tasks
+//
+// Query parameters (all optional):
+//
+//	only_templates=true  — return only parent tasks (tasks without a parent)
+//	parent_id=<id>       — return only child tasks of the given parent
 func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
-	tasks, err := h.usecase.List(r.Context())
+	filter, err := parseListFilter(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	tasks, err := h.usecase.List(r.Context(), filter)
 	if err != nil {
 		writeUsecaseError(w, err)
 		return
@@ -110,6 +123,30 @@ func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// parseListFilter reads optional query parameters from the request.
+func parseListFilter(r *http.Request) (taskusecase.ListFilter, error) {
+	var filter taskusecase.ListFilter
+
+	if r.URL.Query().Get("only_templates") == "true" {
+		filter.OnlyTemplates = true
+	}
+
+	if raw := r.URL.Query().Get("parent_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			return taskusecase.ListFilter{}, errors.New("parent_id must be a positive integer")
+		}
+		filter.ParentID = &id
+	}
+
+	// Mutually exclusive: can't filter by both at the same time.
+	if filter.OnlyTemplates && filter.ParentID != nil {
+		return taskusecase.ListFilter{}, errors.New("only_templates and parent_id cannot be used together")
+	}
+
+	return filter, nil
 }
 
 func getIDFromRequest(r *http.Request) (int64, error) {
@@ -133,12 +170,7 @@ func getIDFromRequest(r *http.Request) (int64, error) {
 func decodeJSON(r *http.Request, dst any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(dst); err != nil {
-		return err
-	}
-
-	return nil
+	return decoder.Decode(dst)
 }
 
 func writeUsecaseError(w http.ResponseWriter, err error) {
@@ -161,6 +193,5 @@ func writeError(w http.ResponseWriter, status int, err error) {
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-
 	_ = json.NewEncoder(w).Encode(payload)
 }

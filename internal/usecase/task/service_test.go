@@ -52,13 +52,23 @@ func (m *mockRepo) Delete(_ context.Context, id int64) error {
 	return nil
 }
 
-func (m *mockRepo) List(_ context.Context) ([]taskdomain.Task, error) {
+func (m *mockRepo) List(_ context.Context, filter taskusecase.ListFilter) ([]taskdomain.Task, error) {
 	out := make([]taskdomain.Task, 0, len(m.tasks))
 	for _, t := range m.tasks {
+		if filter.OnlyTemplates && t.ParentTaskID != nil {
+			continue
+		}
+		if filter.ParentID != nil && (t.ParentTaskID == nil || *t.ParentTaskID != *filter.ParentID) {
+			continue
+		}
 		out = append(out, *t)
 	}
 	return out, nil
 }
+
+//helpers
+
+func int64Ptr(v int64) *int64 { return &v }
 
 //tests
 
@@ -170,9 +180,65 @@ func TestService_Delete_NotFound(t *testing.T) {
 	}
 }
 
+func TestService_List_NoFilter(t *testing.T) {
+	repo := newMockRepo()
+	svc := taskusecase.NewService(repo)
+
+	svc.Create(context.Background(), taskusecase.CreateInput{Title: "Task 1"})
+	svc.Create(context.Background(), taskusecase.CreateInput{Title: "Task 2"})
+
+	tasks, err := svc.List(context.Background(), taskusecase.ListFilter{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+	}
+}
+
+func TestService_List_OnlyTemplates(t *testing.T) {
+	repo := newMockRepo()
+
+	parentID := int64(1)
+	repo.tasks[1] = &taskdomain.Task{ID: 1, Title: "Template", Status: taskdomain.StatusNew}
+	repo.tasks[2] = &taskdomain.Task{ID: 2, Title: "Child", Status: taskdomain.StatusNew, ParentTaskID: &parentID}
+	repo.nextID = 3
+
+	svc := taskusecase.NewService(repo)
+	tasks, err := svc.List(context.Background(), taskusecase.ListFilter{OnlyTemplates: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 template task, got %d", len(tasks))
+	}
+	if tasks[0].Title != "Template" {
+		t.Fatalf("expected 'Template', got %q", tasks[0].Title)
+	}
+}
+
+func TestService_List_ByParentID(t *testing.T) {
+	repo := newMockRepo()
+
+	parentID := int64(1)
+	repo.tasks[1] = &taskdomain.Task{ID: 1, Title: "Template", Status: taskdomain.StatusNew}
+	repo.tasks[2] = &taskdomain.Task{ID: 2, Title: "Child 1", Status: taskdomain.StatusNew, ParentTaskID: &parentID}
+	repo.tasks[3] = &taskdomain.Task{ID: 3, Title: "Child 2", Status: taskdomain.StatusNew, ParentTaskID: &parentID}
+	repo.nextID = 4
+
+	svc := taskusecase.NewService(repo)
+	tasks, err := svc.List(context.Background(), taskusecase.ListFilter{ParentID: int64Ptr(1)})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 child tasks, got %d", len(tasks))
+	}
+}
+
 func TestService_List_Empty(t *testing.T) {
 	svc := taskusecase.NewService(newMockRepo())
-	tasks, err := svc.List(context.Background())
+	tasks, err := svc.List(context.Background(), taskusecase.ListFilter{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
